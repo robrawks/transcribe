@@ -1,0 +1,24 @@
+# Python build/cache
+__pycache__/
+*.py[cod]
+*.egg-info/
+*.egg
+build/
+dist/
+
+# Virtual envs (defensive — we install via pipx, but just in case)
+.venv/
+venv/
+env/
+
+# macOS
+.DS_Store
+
+# Editors
+.vscode/
+.idea/
+*.swp
+
+# Local audio data — out of scope for the repo
+Audio/
+~/Audio/
