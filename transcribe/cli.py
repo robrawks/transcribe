@@ -103,6 +103,47 @@ def convert_with_ffmpeg(src: Path, tmpdir: Path) -> Path:
     return wav
 
 
+def detect_constant_runs(
+    wav_path: Path,
+    min_seconds: float = 1.0,
+) -> list[tuple[float, float, int]]:
+    """Find contiguous runs of identical int16 samples ≥ `min_seconds` long.
+
+    The hirparak/dss-codec WASM decoder (the engine inside ds2-convert) has a
+    known failure mode where it loses sync on certain DS2 byte patterns and
+    emits a constant sample value (typically ±32767) for seconds at a time
+    before either recovering or staying stuck for the rest of the file. The
+    user hears a flat tone; Whisper hears the loud "voice-like" steady-state
+    and hallucinates gibberish (Hebrew Unicode, "Morning Morning Morning...",
+    etc.) on top of legitimate speech in the rest of the recording.
+
+    This detector flags those regions so we can warn the user rather than
+    silently produce a confusing transcript. Returns a list of
+    (start_sec, end_sec, sample_value) tuples; empty list if the WAV is fine.
+    """
+    import wave
+    import numpy as np
+
+    with wave.open(str(wav_path), "rb") as wf:
+        sps = wf.getframerate()
+        samples = np.frombuffer(wf.readframes(wf.getnframes()), dtype=np.int16)
+
+    if len(samples) == 0:
+        return []
+
+    min_run = max(int(min_seconds * sps), 1)
+    # Find the boundaries where the sample value changes.
+    diffs = np.diff(samples)
+    change_idx = np.nonzero(diffs)[0] + 1  # indices where a new run starts
+    starts = np.concatenate(([0], change_idx))
+    ends = np.concatenate((change_idx, [len(samples)]))
+    runs: list[tuple[float, float, int]] = []
+    for s, e in zip(starts, ends):
+        if e - s >= min_run:
+            runs.append((s / sps, e / sps, int(samples[s])))
+    return runs
+
+
 def _load_pcm_for_vad(wav_path: Path) -> "object":
     """Load `wav_path` as a 16 kHz mono float32 torch tensor, via ffmpeg.
 
@@ -317,6 +358,16 @@ def transcribe_one(
             return False, f"decode/convert failed for {src.name}: {e}"
         except FileNotFoundError as e:
             return False, f"decode/convert failed for {src.name}: {e}"
+
+        stuck_runs = detect_constant_runs(wav)
+        if stuck_runs:
+            total_lost = sum(e - s for s, e, _ in stuck_runs)
+            print(
+                f"  ⚠ dss-codec stuck: {len(stuck_runs)} constant-value "
+                f"region(s), {total_lost:.1f}s lost"
+            )
+            for s, e, v in stuck_runs:
+                print(f"      {s:6.1f}s → {e:6.1f}s  (constant sample value {v})")
 
         clip_ts: str = "0"  # default: transcribe whole file
         vad_label = "VAD disabled"
