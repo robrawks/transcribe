@@ -151,5 +151,21 @@ restores the faster path.
 - **Prompt-leakage**: Whisper occasionally inserts prompt vocabulary into
   the transcript during silent stretches. Mitigated by VAD + BoH filter,
   but worth eyeballing if a recording has long silences.
+- **dss-codec stuck-output regions**: the upstream WASM decoder
+  (`hirparak/dss-codec`) occasionally loses sync on certain DS2 byte
+  patterns and emits a constant sample value (typically ±32767) for
+  several seconds before recovering. Whisper hears the resulting flat
+  tone as "voice-like" and hallucinates gibberish on top of it. The
+  pipeline detects these regions and prints a warning like:
+
+  ```
+  ⚠ dss-codec stuck: 1 constant-value region(s), 11.9s lost
+      18.7s →   30.5s  (constant sample value -32767)
+  ```
+
+  If you see this warning, the corresponding seconds of audio are
+  unrecoverable and the transcript around them is likely hallucination.
+  The detector only flags the *symptom*; the *cause* lives upstream in
+  the codec.
 
 [mlx-whisper]: https://github.com/ml-explore/mlx-examples/tree/main/whisper
