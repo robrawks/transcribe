@@ -128,7 +128,7 @@ def detect_constant_runs(
         sps = wf.getframerate()
         samples = np.frombuffer(wf.readframes(wf.getnframes()), dtype=np.int16)
 
-    if len(samples) == 0:
+    if len(samples) == 0 or sps == 0:
         return []
 
     min_run = max(int(min_seconds * sps), 1)
