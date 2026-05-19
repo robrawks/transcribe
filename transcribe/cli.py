@@ -88,6 +88,59 @@ def convert_ds2(src: Path, tmpdir: Path) -> Path:
     return wav
 
 
+# DS2 file structure constants and expected compressed bitrate. The header is
+# always 0x600 bytes; everything after that is compressed audio. For QP mode
+# (the only mode the DS-5000 records in by default), observed payload bitrate
+# across ~20 healthy files is tightly clustered at 3543-3556 bytes/sec.
+DS2_HEADER_BYTES = 0x600
+DS2_QP_EXPECTED_BYTES_PER_SEC = 3545
+# Trigger only on significant overshoot (≥20% above expected). The actual
+# observed anomaly on DS500339 was 5131 bytes/sec (45% above). A 20% floor
+# leaves comfortable headroom against the 2.8s-file outlier (3721, +5%).
+DS2_BITRATE_ANOMALY_RATIO = 1.20
+
+
+def check_ds2_bitrate(src: Path, wav: Path) -> tuple[float, float] | None:
+    """Compare the DS2 file's compressed bitrate against the expected ~3545
+    bytes/sec for QP mode. Returns (observed_bps, expected_bps) if the file
+    has consumed significantly more input bytes per output second than a
+    healthy QP recording would; returns None otherwise.
+
+    This is a second, complementary detector for the same upstream
+    hirparak/dss-codec failure mode that detect_constant_runs() catches.
+    When the WASM decoder loses sync, it consumes extra input bytes while
+    producing fewer output samples. The bitrate anomaly is sometimes the
+    only visible symptom — the codec may stay just below the constant-run
+    detection threshold yet still mis-decode chunks of the file.
+
+    The DS-5000 records exclusively in QP mode (the SP/LP modes exist in
+    spec but require explicit menu changes that this device's owner has
+    never made). If the recorder is ever reconfigured to SP/LP, the
+    observed bitrate would legitimately drop — only over-shoot triggers
+    the warning, so a lower-rate mode would never false-positive here.
+    """
+    import wave
+
+    file_size = src.stat().st_size
+    payload_bytes = file_size - DS2_HEADER_BYTES
+    if payload_bytes <= 0:
+        return None
+
+    with wave.open(str(wav), "rb") as wf:
+        sps = wf.getframerate()
+        frames = wf.getnframes()
+
+    if sps == 0 or frames == 0:
+        return None
+    duration_sec = frames / sps
+
+    observed = payload_bytes / duration_sec
+    threshold = DS2_QP_EXPECTED_BYTES_PER_SEC * DS2_BITRATE_ANOMALY_RATIO
+    if observed > threshold:
+        return (observed, float(DS2_QP_EXPECTED_BYTES_PER_SEC))
+    return None
+
+
 def convert_with_ffmpeg(src: Path, tmpdir: Path) -> Path:
     wav = tmpdir / (src.stem + ".wav")
     subprocess.run(
@@ -368,6 +421,18 @@ def transcribe_one(
             )
             for s, e, v in stuck_runs:
                 print(f"      {s:6.1f}s → {e:6.1f}s  (constant sample value {v})")
+
+        if fmt == "ds2":
+            bitrate_anomaly = check_ds2_bitrate(src, wav)
+            if bitrate_anomaly is not None:
+                observed, expected = bitrate_anomaly
+                pct = 100 * (observed / expected - 1)
+                print(
+                    f"  ⚠ ds2 bitrate anomaly: {observed:.0f} bytes/sec "
+                    f"(expected ~{expected:.0f} for ds2_qp, +{pct:.0f}%). "
+                    f"Decoder likely mis-decoded — preserve {src.name} "
+                    f"for re-decoding with another tool."
+                )
 
         clip_ts: str = "0"  # default: transcribe whole file
         vad_label = "VAD disabled"
