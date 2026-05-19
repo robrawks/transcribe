@@ -168,4 +168,24 @@ restores the faster path.
   The detector only flags the *symptom*; the *cause* lives upstream in
   the codec.
 
+- **dss-codec bitrate anomaly**: a complementary detector for the same
+  upstream bug. Healthy DS-5000 `ds2_qp` files have a tightly-clustered
+  compressed bitrate of ~3545 bytes/sec; when the WASM decoder
+  mis-decodes a file, it tends to consume extra input bytes per output
+  second, pushing the observed bitrate well above the expected rate.
+  The pipeline warns when the ratio exceeds expected by ≥20%:
+
+  ```
+  ⚠ ds2 bitrate anomaly: 5131 bytes/sec (expected ~3545 for ds2_qp, +45%).
+    Decoder likely mis-decoded — preserve DS500339.DS2 for re-decoding
+    with another tool.
+  ```
+
+  This warning sometimes fires when the stuck-region detector doesn't,
+  catching files where the codec stays just below the constant-run
+  threshold but still mis-decodes content. The `.DS2` file itself is
+  fine — your Olympus recorder will play it correctly. To recover the
+  audio, re-decode the preserved `.DS2` with DSS Player Pro R5
+  (Windows) or DSS Player for Mac (uses Olympus's own decoder).
+
 [mlx-whisper]: https://github.com/ml-explore/mlx-examples/tree/main/whisper
