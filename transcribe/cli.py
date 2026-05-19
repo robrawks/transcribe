@@ -29,7 +29,7 @@ DEFAULT_PROMPT_FILE = PROMPTS_DIR / "default.txt"
 DEFAULT_MODEL = "mlx-community/whisper-large-v3-turbo"
 
 DS2_EXTS = {".ds2", ".dss"}
-OTHER_AUDIO_EXTS = {".mp3", ".wav", ".m4a", ".flac", ".opus", ".ogg", ".aac"}
+OTHER_AUDIO_EXTS = {".mp3", ".wav", ".m4a", ".flac", ".opus", ".ogg", ".aac", ".aiff", ".aif"}
 
 # Documented Whisper "bag of hallucinations" — short phrases the model
 # emits on silent or non-speech segments due to YouTube-heavy training data.
