@@ -2,11 +2,26 @@
 
 Local on-Mac audio → timestamped transcript pipeline. Accepts Olympus
 `.ds2`/`.dss` recordings (via the sibling `ds2-converter` project) as well as
-`.mp3`/`.wav`/`.m4a`/`.flac`/`.opus`/`.ogg`/`.aac`, normalizes everything to
-16 kHz mono WAV, runs Silero VAD to skip silence, then runs
+`.mp3`/`.wav`/`.m4a`/`.flac`/`.opus`/`.ogg`/`.aac`/`.aiff`/`.aif`, normalizes
+everything to 16 kHz mono WAV, runs Silero VAD to skip silence, then runs
 [mlx-whisper] (`whisper-large-v3-turbo` on Apple MLX). Output is a
 `.transcript.txt` (segment-level timestamps inline) and a `.transcript.json`
 sidecar (full Whisper output incl. word timestamps).
+
+## DS2 Insert-mode recovery workflow
+
+The open-source `dss-codec` WASM decoder we use mis-decodes DS2 files
+recorded with Insert mode (audio spliced into the middle of an existing
+recording). The codec-stuck and bitrate-anomaly detectors will warn when a
+file triggers the bug. When that happens:
+
+1. Open the offending `.DS2` file in **DSS Player for Mac** (Olympus's
+   official decoder — it handles inserts correctly).
+2. **File → Save As → AIFF** to export the audio.
+3. Drop the resulting `.aif` into `~/Audio/Inbox/` and re-run `transcribe`.
+
+The pipeline now accepts AIFF inputs alongside the other formats, so the
+recovered audio flows through the same VAD → Whisper path as everything else.
 
 The transcript is meant to be pasted into a Claude.ai project for the final
 stitch / cleanup step — that step is intentionally *not* automated here.
